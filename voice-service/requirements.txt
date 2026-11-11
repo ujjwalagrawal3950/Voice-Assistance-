@@ -1,0 +1,12 @@
+# Voice Service Dependencies (Python 3.13)
+# Local STT (faster-whisper) + Local/Edge TTS (Piper + edge-tts) over WebSocket.
+
+pipecat-ai==1.15.0
+faster-whisper==1.2.1
+piper-tts==1.8.0
+edge-tts>=7.0.0
+python-dotenv==1.2.4
+httpx==0.28.1
+websockets>=13.1
+av>=14.0.0
+loguru>=0.7.3

@@ -1,0 +1,47 @@
+# Environment files & secrets (never upload real secrets)
+.env
+.env.*
+!.env.example
+
+# Python virtual environments & caches
+.venv/
+.venv*/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.ipynb_checkpoints/
+coverage/
+
+# Local SQLite databases & logs
+*.db
+*.sqlite
+*.sqlite3
+*.log
+
+# Node dependencies & frontend builds
+node_modules/
+dist/
+build/
+
+# IDE & OS files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Local developer scratch notes
+command.txt
+
+# AI model weights & configs in root models/ folder (keep backend/app/models/ code tracked!)
+/models/
+*.onnx
+*.onnx.json
+*.bin
+*.pt
+*.pth
+*.safetensors
+*.gguf

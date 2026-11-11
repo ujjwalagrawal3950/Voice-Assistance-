@@ -1,0 +1,24 @@
+# Virtual KAM — Backend Dependencies (Python 3.15)
+# Pinned to versions verified compatible with Python 3.15.
+
+# Web framework & API
+fastapi==0.162.2
+uvicorn==0.54.0
+pydantic==2.14.3
+pydantic-settings==2.16.2
+python-dotenv==1.2.4
+
+# Database & ORM
+sqlalchemy==2.1.8
+alembic==1.20.1
+
+# Data & analytics
+pandas==3.1.1
+numpy==2.5.4
+
+# HTTP client (for Ollama adapter)
+httpx==0.28.1
+
+# Testing
+pytest==9.2.0
+pytest-asyncio==1.4.1.post1
