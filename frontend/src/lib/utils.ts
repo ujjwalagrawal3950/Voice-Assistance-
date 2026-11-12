@@ -16,10 +16,40 @@ export function formatINR(paise: number | null | undefined): string {
   }).format(inr)
 }
 
-/** Format a fraction (0-1) as a percentage string. */
+/** Format an integer or decimal rupee (INR) value directly as an INR string. */
+export function formatRupees(inr: number | null | undefined): string {
+  if (inr == null) return '—'
+  return new Intl.NumberFormat('en-IN', {
+    style: 'currency',
+    currency: 'INR',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(inr)
+}
+
+/** Format a fraction (0-1) as a whole-number percentage string. */
 export function formatPct(value: number | null | undefined): string {
   if (value == null) return '—'
   return `${(value * 100).toFixed(0)}%`
+}
+
+/** Format a fraction (0-1) as a readable percentage string with precision (e.g. 14.1%). */
+export function formatPctPrecise(value: number | null | undefined, decimals = 1): string {
+  if (value == null) return '—'
+  return `${(value * 100).toFixed(decimals)}%`
+}
+
+/** Format a raw integer or decimal count using Indian grouping (e.g. 1,240). */
+export function formatNumber(value: number | null | undefined): string {
+  if (value == null) return '—'
+  return new Intl.NumberFormat('en-IN').format(value)
+}
+
+/** Format a percentage delta number (e.g. -32.5 -> "-32.5%", +14.2 -> "+14.2%"). */
+export function formatDeltaPct(value: number | null | undefined): string {
+  if (value == null) return '—'
+  const sign = value > 0 ? '+' : ''
+  return `${sign}${value.toFixed(1)}%`
 }
 
 /** Format a date YYYY-MM-DD into a short Indian-friendly string. */

@@ -166,6 +166,13 @@ export interface CalendarEvent {
   data_status: DataStatus
 }
 
+export interface FestivalCalendarResponse {
+  seller_id: string
+  seller_state?: string | null
+  upcoming_events: CalendarEvent[]
+  data_status: DataStatus
+}
+
 export interface VoiceSessionResponse {
   session_id: string
   pipecat_ws_url: string

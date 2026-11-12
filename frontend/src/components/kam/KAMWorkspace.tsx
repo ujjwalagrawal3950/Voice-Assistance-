@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api } from "@/api/client";
 import {
   createChatSession,
@@ -27,7 +27,9 @@ import {
   Square,
   Check,
   CheckCircle2,
+  Copy,
   FileText,
+  History,
   SlidersHorizontal,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
@@ -70,7 +72,6 @@ export function KAMWorkspace() {
     summarizeCall,
     voiceSettings,
     availableVoices,
-    activeEngineLabel,
     activeSessionId,
     hydrateSessionMessages,
     resetChatPane,
@@ -79,16 +80,20 @@ export function KAMWorkspace() {
   } = useVoice();
 
   const { sessionId: urlSessionId } = useParams<{ sessionId?: string }>();
+  const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
 
   const [input, setInput] = useState("");
   const [showVoiceSettings, setShowVoiceSettings] = useState(false);
+  const [mobileHistoryOpen, setMobileHistoryOpen] = useState(false);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const [topAlert, setTopAlert] = useState<ProactiveAlert | null>(null);
   const [sessions, setSessions] = useState<ChatSessionSummary[]>([]);
   const [sessionsLoading, setSessionsLoading] = useState(true);
   const [sessionError, setSessionError] = useState<string | null>(null);
   const [isCreatingSession, setIsCreatingSession] = useState(false);
   const justCreatedSessionRef = useRef<string | null>(null);
+  const consumedPromptRef = useRef<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const refreshSessions = useCallback(async () => {
@@ -176,9 +181,9 @@ export function KAMWorkspace() {
     navigate(`/chat/${targetSessionId}`);
   };
 
-  const handleSendMessage = async (rawText: string) => {
+  const handleSendMessage = useCallback(async (rawText: string) => {
     const text = rawText.trim();
-    if (!text || isProcessing) return;
+    if (!text || isCreatingSession || voiceState === "processing") return;
     setSessionError(null);
 
     let targetSessionId = urlSessionId || activeSessionId;
@@ -207,6 +212,25 @@ export function KAMWorkspace() {
 
     await sendText(text, targetSessionId);
     await refreshSessions();
+  }, [activeSessionId, isCreatingSession, navigate, refreshSessions, sendText, urlSessionId, voiceState]);
+
+  useEffect(() => {
+    const queuedPrompt = searchParams.get("prompt");
+    if (!queuedPrompt || consumedPromptRef.current === queuedPrompt) return;
+    consumedPromptRef.current = queuedPrompt;
+    resetChatPane();
+    setSearchParams({}, { replace: true });
+    handleSendMessage(queuedPrompt);
+  }, [handleSendMessage, resetChatPane, searchParams, setSearchParams]);
+
+  const handleCopyMessage = async (msgId: string, content: string) => {
+    try {
+      await navigator.clipboard.writeText(content);
+      setCopiedId(msgId);
+      setTimeout(() => setCopiedId((prev) => (prev === msgId ? null : prev)), 1800);
+    } catch {
+      // ignore clipboard denial
+    }
   };
 
   const handleTextSubmit = async (e: React.FormEvent) => {
@@ -227,53 +251,59 @@ export function KAMWorkspace() {
   };
 
   return (
-    <div className="flex h-full bg-background rounded-2xl border border-border overflow-hidden">
+    <div className="flex h-full bg-white rounded-xl border border-border overflow-hidden">
       <ChatHistorySidebar
         sessions={sessions}
         activeSessionId={urlSessionId || activeSessionId}
         loading={sessionsLoading}
+        mobileOpen={mobileHistoryOpen}
+        onCloseMobile={() => setMobileHistoryOpen(false)}
         onNewChat={handleNewChat}
         onSelectSession={handleSelectSession}
       />
-      <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
+      <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden bg-[#fafafa]">
       {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-card/80 backdrop-blur-md p-4 sm:px-6 sticky top-0 z-10">
-        <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-            <Bot className="w-5 h-5" />
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-white px-4 sm:px-6 py-3 sticky top-0 z-10">
+        <div className="flex items-center gap-2.5 sm:gap-3">
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            className="md:hidden h-9 w-9 shrink-0"
+            onClick={() => setMobileHistoryOpen(true)}
+            aria-label="Open previous chats"
+            title="Previous chats"
+          >
+            <History className="w-4 h-4" />
+          </Button>
+          <div className="relative flex h-8 w-8 items-center justify-center rounded-lg bg-slate-900 text-white">
+            <Bot className="w-4 h-4" />
+            {isVoiceActive && (
+              <span className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-emerald-500 ring-2 ring-white" />
+            )}
           </div>
           <div>
-            <h2 className="font-bold text-foreground text-lg">Virtual KAM</h2>
+            <h2 className="font-semibold text-foreground text-sm sm:text-base leading-tight">Virtual KAM Assistant</h2>
             <p className="text-xs text-muted-foreground">
-              Two-way voice &amp; text business partner
+              Ask about sales, stockouts, or restock budgets
             </p>
           </div>
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
-          {mode !== "none" && (
-            <Badge variant="outline" className="text-xs">
-              {mode === "local-ws" ? activeEngineLabel : "Browser Voice"}
+          {voiceState !== "idle" && (
+            <Badge
+              variant={
+                voiceState === "error"
+                  ? "destructive"
+                  : voiceState === "assistant_speaking" || voiceState === "user_speaking"
+                  ? "default"
+                  : "secondary"
+              }
+            >
+              {STATE_LABELS[voiceState]}
             </Badge>
           )}
-
-          <Badge
-            variant={
-              voiceState === "error"
-                ? "destructive"
-                : voiceState === "idle"
-                ? "secondary"
-                : voiceState === "assistant_speaking" || voiceState === "user_speaking"
-                ? "default"
-                : "info"
-            }
-            className={cn(
-              (voiceState === "assistant_speaking" || voiceState === "user_speaking") &&
-                "animate-pulse"
-            )}
-          >
-            {STATE_LABELS[voiceState]}
-          </Badge>
 
           {(voiceState === "user_speaking" || voiceState === "listening") && mode === "local-ws" && (
             <Button
@@ -553,16 +583,25 @@ export function KAMWorkspace() {
           !isProcessing &&
           voiceState !== "user_speaking" &&
           !interimTranscript && (
-          <div className="flex flex-col items-center justify-center text-center py-12 px-4">
-            <div className="w-12 h-12 rounded-2xl bg-primary/10 text-primary flex items-center justify-center mb-4">
-              <Mic className="w-6 h-6" />
+          <div className="flex flex-col items-center justify-center text-center py-10 sm:py-16 px-4">
+            <div className="max-w-md w-full rounded-2xl border border-border bg-white p-7 space-y-4">
+              <div className="mx-auto w-12 h-12 rounded-xl bg-slate-100 text-slate-900 flex items-center justify-center">
+                <Mic className="w-5 h-5" />
+              </div>
+              <div className="space-y-1.5">
+                <h3 className="text-base font-semibold text-foreground">
+                  Ask your Virtual KAM anything
+                </h3>
+                <p className="text-sm text-muted-foreground leading-relaxed">
+                  Start a live voice call or type a question below to check store numbers and restock options.
+                </p>
+              </div>
+              {isVoiceSupported && !isVoiceActive && (
+                <Button type="button" onClick={handleVoiceToggle} className="w-full sm:w-auto">
+                  <Mic className="w-4 h-4 mr-2" /> Start Voice Call
+                </Button>
+              )}
             </div>
-            <h3 className="text-base font-semibold text-foreground mb-1">
-              Talk or type to your Virtual KAM
-            </h3>
-            <p className="text-sm text-muted-foreground max-w-md">
-              Click <strong>Start Voice</strong> to ask questions hands-free, or pick a prompt below to test with text.
-            </p>
           </div>
         )}
 
@@ -570,79 +609,86 @@ export function KAMWorkspace() {
           <div
             key={msg.id}
             className={cn(
-              "flex gap-3 max-w-[85%]",
+              "flex gap-3 max-w-3xl",
               msg.role === "user" ? "ml-auto flex-row-reverse" : "mr-auto"
             )}
           >
-            <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0">
+            <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 mt-0.5">
               {msg.role === "user" ? (
-                <div className="bg-primary text-primary-foreground text-xs font-medium flex items-center justify-center w-full h-full rounded-full">
+                <div className="bg-slate-900 text-white flex items-center justify-center w-full h-full rounded-full">
                   <User className="w-4 h-4" />
                 </div>
               ) : (
-                <div className="bg-secondary text-secondary-foreground text-xs font-medium flex items-center justify-center w-full h-full rounded-full">
+                <div className="bg-white border border-border text-slate-700 flex items-center justify-center w-full h-full rounded-full">
                   <Bot className="w-4 h-4" />
                 </div>
               )}
             </div>
-            <Card
+            <div
               className={cn(
-                "flex-1",
-                msg.role === "user" && "bg-primary/5 border-primary/20"
+                "rounded-2xl border px-4 py-3 text-sm",
+                msg.role === "user"
+                  ? "bg-slate-900 text-white border-slate-900"
+                  : "bg-white text-foreground border-border flex-1"
               )}
             >
-              <CardContent className="p-3.5 pt-3">
-                {msg.role === "assistant" ? (
-                  <MarkdownMessage content={msg.content} />
-                ) : (
-                  <p className="text-sm text-foreground whitespace-pre-wrap">{msg.content}</p>
-                )}
-                {msg.actionPerformed?.recommendations && msg.actionPerformed.recommendations.length > 0 && (
-                  <div className="mt-2 pt-2 border-t border-border/50 flex flex-wrap gap-1.5">
-                    {msg.actionPerformed.recommendations.map((rec) => (
-                      <Badge
-                        key={rec.id}
-                        variant="secondary"
-                        className="text-[11px] gap-1 bg-green-100 text-green-800 border-green-300"
-                      >
-                        <CheckCircle2 className="w-3 h-3" />
-                        {msg.actionPerformed?.action}: {rec.title}
-                      </Badge>
-                    ))}
-                  </div>
-                )}
-                <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                  <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                    <Clock className="w-3 h-3" />
-                    {msg.timestamp.toLocaleTimeString([], {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
-                  </span>
-                  {msg.channel && (
-                    <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-                      {msg.channel}
+              {msg.role === "assistant" ? (
+                <MarkdownMessage content={msg.content} />
+              ) : (
+                <p className="whitespace-pre-wrap leading-relaxed">{msg.content}</p>
+              )}
+
+              {msg.actionPerformed?.recommendations && msg.actionPerformed.recommendations.length > 0 && (
+                <div className="mt-2.5 pt-2.5 border-t border-border/60 flex flex-wrap gap-1.5">
+                  {msg.actionPerformed.recommendations.map((rec) => (
+                    <Badge
+                      key={rec.id}
+                      variant="secondary"
+                      className="text-[11px] gap-1 bg-emerald-50 text-emerald-700 border-emerald-200"
+                    >
+                      <CheckCircle2 className="w-3 h-3" />
+                      {msg.actionPerformed?.action}: {rec.title}
                     </Badge>
-                  )}
-                  {msg.specialistsConsulted && msg.specialistsConsulted.length > 0 && (
-                    msg.specialistsConsulted.map((sp) => (
-                      <Badge
-                        key={sp}
-                        variant="secondary"
-                        className="text-[10px] px-1.5 py-0 bg-primary/10 text-primary border-primary/20"
-                      >
-                        {sp}
-                      </Badge>
-                    ))
-                  )}
-                  {msg.toolActivity && msg.toolActivity.length > 0 && (
-                    <span className="text-[11px] text-muted-foreground">
-                      Tools: {msg.toolActivity.join(", ")}
-                    </span>
-                  )}
+                  ))}
                 </div>
-              </CardContent>
-            </Card>
+              )}
+
+              <div
+                className={cn(
+                  "flex items-center gap-2 mt-2 flex-wrap text-[11px]",
+                  msg.role === "user" ? "text-slate-300" : "text-muted-foreground"
+                )}
+              >
+                <span className="flex items-center gap-1">
+                  <Clock className="w-3 h-3" />
+                  {msg.timestamp.toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </span>
+                {msg.toolActivity && msg.toolActivity.length > 0 && (
+                  <span>· Checked: {msg.toolActivity.join(", ")}</span>
+                )}
+                {msg.role === "assistant" && (
+                  <button
+                    type="button"
+                    onClick={() => handleCopyMessage(msg.id, msg.content)}
+                    className="ml-auto inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors cursor-pointer"
+                    title="Copy response"
+                  >
+                    {copiedId === msg.id ? (
+                      <>
+                        <Check className="w-3 h-3 text-emerald-600" /> Copied
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3 h-3" /> Copy
+                      </>
+                    )}
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
         ))}
 
@@ -676,28 +722,23 @@ export function KAMWorkspace() {
         )}
 
         {isProcessing && (
-          <div className="flex gap-3 max-w-[85%] mr-auto fade-in" role="status" aria-live="polite">
-            <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 relative">
-              <span className="absolute inset-0 rounded-full bg-primary/25 animate-ping" />
-              <div className="relative bg-primary/15 text-primary border border-primary/30 flex items-center justify-center w-full h-full rounded-full">
-                <Bot className="w-4 h-4 animate-pulse" />
-              </div>
+          <div className="flex gap-3 max-w-3xl mr-auto fade-in" role="status" aria-live="polite">
+            <div className="w-8 h-8 rounded-full bg-white border border-border text-primary flex items-center justify-center shrink-0 mt-0.5">
+              <Bot className="w-4 h-4 animate-pulse" />
             </div>
-            <Card className="flex-1 border-primary/30 bg-primary/[0.03] min-w-[240px]">
-              <CardContent className="p-3.5 space-y-2.5">
-                <div className="flex items-center gap-2.5">
-                  <div className="flex items-center gap-1" aria-hidden="true">
-                    <span className="w-2 h-2 rounded-full bg-primary kam-typing-dot" style={{ animationDelay: "0ms" }} />
-                    <span className="w-2 h-2 rounded-full bg-primary kam-typing-dot" style={{ animationDelay: "160ms" }} />
-                    <span className="w-2 h-2 rounded-full bg-primary kam-typing-dot" style={{ animationDelay: "320ms" }} />
-                  </div>
-                  <span className="text-sm font-medium text-foreground">
-                    Virtual KAM is analyzing store metrics &amp; formulating strategy...
-                  </span>
+            <div className="flex-1 rounded-2xl border border-border bg-white px-4 py-3.5 min-w-[240px] space-y-2.5">
+              <div className="flex items-center gap-2.5">
+                <div className="flex items-center gap-1" aria-hidden="true">
+                  <span className="w-1.5 h-1.5 rounded-full bg-primary kam-typing-dot" style={{ animationDelay: "0ms" }} />
+                  <span className="w-1.5 h-1.5 rounded-full bg-primary kam-typing-dot" style={{ animationDelay: "160ms" }} />
+                  <span className="w-1.5 h-1.5 rounded-full bg-primary kam-typing-dot" style={{ animationDelay: "320ms" }} />
                 </div>
-                <div className="h-1.5 w-full rounded-full kam-thinking-bar" />
-              </CardContent>
-            </Card>
+                <span className="text-sm text-muted-foreground">
+                  Checking store numbers &amp; preparing reply...
+                </span>
+              </div>
+              <div className="h-1 w-full rounded-full kam-thinking-bar" />
+            </div>
           </div>
         )}
 
@@ -705,42 +746,49 @@ export function KAMWorkspace() {
       </div>
 
       {/* Input area */}
-      <div className="border-t border-border bg-card p-4 sm:px-6">
-        <form onSubmit={handleTextSubmit} className="flex gap-2">
-          <Input
-            className="flex-1 h-auto py-2.5"
-            placeholder='Ask about your business (e.g., "Why are my sales down?")'
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            disabled={isProcessing}
-          />
-          <Button type="submit" disabled={isProcessing || !input.trim()} aria-label={isProcessing ? "Waiting for AI response" : "Send message"}>
-            {isProcessing ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <SendIcon className="w-4 h-4" />
-            )}
-          </Button>
-        </form>
-
-        {/* Suggested prompts */}
-        <div className="mt-3 flex flex-wrap gap-2">
-          {[
-            "Why are my sales down? Break down stockout vs cancellation drivers.",
-            "What if I spend ₹15,000 on restocking today vs delaying 1 week?",
-            "Which festival-sensitive SKUs have long supplier lead times?",
-            "What actions worked best before and what should I approve next?",
-          ].map((prompt) => (
-            <Button
-              key={prompt}
-              variant="outline"
-              size="sm"
+      <div className="border-t border-border bg-white p-4 sm:px-6">
+        <div className="max-w-3xl mx-auto space-y-2.5">
+          <form onSubmit={handleTextSubmit} className="flex gap-2">
+            <Input
+              className="flex-1 h-10"
+              placeholder='Ask about your sales, stockouts, or restocking...'
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
               disabled={isProcessing}
-              onClick={() => handleSendMessage(prompt)}
+            />
+            <Button
+              type="submit"
+              className="h-10 px-4"
+              disabled={isProcessing || !input.trim()}
+              aria-label={isProcessing ? "Waiting for AI response" : "Send message"}
             >
-              {prompt}
+              {isProcessing ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <SendIcon className="w-4 h-4" />
+              )}
             </Button>
-          ))}
+          </form>
+
+          {/* Suggested prompts */}
+          <div className="flex flex-wrap gap-1.5">
+            {[
+              "Why are my sales down?",
+              "What should I restock with ₹15,000?",
+              "Which products have long lead times?",
+              "What actions should I approve next?",
+            ].map((prompt) => (
+              <button
+                key={prompt}
+                type="button"
+                disabled={isProcessing}
+                onClick={() => handleSendMessage(prompt)}
+                className="px-2.5 py-1 rounded-lg border border-border bg-[#fafafa] hover:bg-muted text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer disabled:opacity-50"
+              >
+                {prompt}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
       </div>

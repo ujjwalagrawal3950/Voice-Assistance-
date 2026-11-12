@@ -1,19 +1,26 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Check, X, AlertCircle, ClipboardList, TrendingUp } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Check, X, AlertCircle, ClipboardList, Sparkles } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { api } from "@/api/client";
 import type { OutcomeTrackRecord, Recommendation } from "@/types";
-import { formatINR } from "@/lib/utils";
+import { cn, formatINR, formatNumber } from "@/lib/utils";
 import { Card, CardHeader, CardContent, CardFooter } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
+type StatusTab = "all" | "pending" | "approved" | "rejected";
+
 export function RecommendationsPage() {
+  const navigate = useNavigate();
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
   const [trackRecord, setTrackRecord] = useState<OutcomeTrackRecord | null>(null);
+  const [activeTab, setActiveTab] = useState<StatusTab>("all");
   const [outcomeFormId, setOutcomeFormId] = useState<string | null>(null);
-  const [outcomeStatusInput, setOutcomeStatusInput] = useState<"positive" | "neutral" | "negative">("positive");
+  const [outcomeStatusInput, setOutcomeStatusInput] = useState<"positive" | "neutral" | "negative">(
+    "positive"
+  );
   const [outcomeUnitsInput, setOutcomeUnitsInput] = useState<string>("");
   const [outcomeRevDeltaInput, setOutcomeRevDeltaInput] = useState<string>("");
   const [outcomeMarginInput, setOutcomeMarginInput] = useState<string>("");
@@ -43,6 +50,33 @@ export function RecommendationsPage() {
     window.addEventListener("kam:recommendations-updated", onUpdated);
     return () => window.removeEventListener("kam:recommendations-updated", onUpdated);
   }, []);
+
+  const counts = useMemo(() => {
+    let pending = 0;
+    let approved = 0;
+    let rejected = 0;
+    for (const r of recommendations) {
+      if (r.approval_status === "approved") approved += 1;
+      else if (r.approval_status === "rejected") rejected += 1;
+      else pending += 1;
+    }
+    return { all: recommendations.length, pending, approved, rejected };
+  }, [recommendations]);
+
+  const visibleRecs = useMemo(() => {
+    return recommendations.filter((r) => {
+      if (activeTab === "pending") {
+        return (
+          r.approval_status === "pending" ||
+          r.approval_status === "new" ||
+          r.approval_status === "viewed"
+        );
+      }
+      if (activeTab === "approved") return r.approval_status === "approved";
+      if (activeTab === "rejected") return r.approval_status === "rejected";
+      return true;
+    });
+  }, [recommendations, activeTab]);
 
   const handleDecision = async (recId: string, action: "approve" | "reject") => {
     setUpdatingId(recId);
@@ -83,261 +117,314 @@ export function RecommendationsPage() {
 
   if (loading) {
     return (
-      <div className="container-responsive py-8">
-        <div className="flex flex-col items-center justify-center min-h-[360px]">
-          <div className="animate-pulse rounded-full bg-primary/10 p-4 mb-4">
-            <ClipboardList className="w-10 h-10 text-primary" />
-          </div>
-          <h2 className="text-xl font-semibold text-foreground mb-1">Loading recommendations...</h2>
-          <p className="text-sm text-muted-foreground">Fetching prioritized actions for your store</p>
+      <div className="container-responsive py-8 space-y-5">
+        <div className="h-14 rounded-xl bg-white border border-border animate-pulse" />
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="h-64 rounded-xl bg-white border border-border animate-pulse" />
+          ))}
         </div>
       </div>
     );
   }
 
   return (
-    <div className="container-responsive py-6">
-      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-8">
+    <div className="container-responsive py-6 sm:py-8 space-y-6 fade-in">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Recommendations</h1>
-          <p className="text-sm text-muted-foreground">
-            Prioritised business actions with evidence, impact, assumptions, and explicit seller approval.
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+            Action Recommendations
+          </h1>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            Review AI proposals with exact estimated costs before taking action.
           </p>
         </div>
+
         {trackRecord && trackRecord.measured_count > 0 && (
-          <div className="flex items-center gap-2 bg-muted/50 border border-border rounded-lg px-3 py-2 text-xs">
-            <TrendingUp className="w-4 h-4 text-primary shrink-0" />
-            <span>
-              <strong>Outcome Memory:</strong> {trackRecord.positive_count}/{trackRecord.measured_count} positive
-              {trackRecord.overall_win_rate_pct !== null ? ` (${trackRecord.overall_win_rate_pct}% win-rate)` : ""}
-            </span>
+          <div className="rounded-lg border border-border bg-white px-4 py-2 text-xs tabular-nums">
+            <span className="text-muted-foreground">Past outcome track record: </span>
+            <strong className="font-semibold text-foreground">
+              {trackRecord.positive_count} of {trackRecord.measured_count} positive
+            </strong>
+            {trackRecord.overall_win_rate_pct !== null && (
+              <span className="text-emerald-600 font-semibold ml-1.5">
+                ({trackRecord.overall_win_rate_pct}% win rate)
+              </span>
+            )}
           </div>
         )}
       </div>
 
+      {/* Filter Tabs */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="inline-flex rounded-lg border border-border bg-white p-0.5">
+          {(
+            [
+              { id: "all", label: "All", count: counts.all },
+              { id: "pending", label: "Pending Review", count: counts.pending },
+              { id: "approved", label: "Approved", count: counts.approved },
+              { id: "rejected", label: "Rejected", count: counts.rejected },
+            ] as const
+          ).map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveTab(tab.id)}
+              className={cn(
+                "px-3 py-1.5 rounded-md text-xs font-medium transition-colors cursor-pointer tabular-nums",
+                activeTab === tab.id
+                  ? "bg-slate-900 text-white"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              {tab.label} ({tab.count})
+            </button>
+          ))}
+        </div>
+
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() =>
+            navigate(
+              "/chat?prompt=" +
+                encodeURIComponent(
+                  "What are my pending recommendations and which one should I approve first?"
+                )
+            )
+          }
+        >
+          <Sparkles className="w-3.5 h-3.5 mr-1.5 text-primary" />
+          Discuss with AI
+        </Button>
+      </div>
+
       {error && (
-        <div className="alert alert-destructive mb-6">
-          <AlertCircle className="w-4 h-4 mr-2 shrink-0 mt-0.5" />
-          <span className="text-sm">{error}</span>
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 flex items-center gap-2">
+          <AlertCircle className="w-4 h-4 shrink-0" />
+          <span>{error}</span>
         </div>
       )}
 
-      {recommendations.length === 0 ? (
-        <Card className="p-8 text-center">
-          <ClipboardList className="w-10 h-10 mx-auto mb-3 text-muted-foreground" />
-          <h3 className="text-base font-semibold text-foreground mb-1">No recommendations yet</h3>
+      {visibleRecs.length === 0 ? (
+        <Card className="p-12 text-center space-y-2">
+          <ClipboardList className="w-7 h-7 mx-auto text-muted-foreground" />
+          <p className="text-base font-medium text-foreground">
+            {activeTab === "all" ? "No recommendations yet" : `No ${activeTab} recommendations`}
+          </p>
           <p className="text-sm text-muted-foreground">
-            Ask your Virtual KAM in the voice workspace to diagnose your store and propose actions.
+            Ask your AI KAM about low stock or high cancellations to generate new plans.
           </p>
         </Card>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 fade-in">
-          {recommendations.map((rec) => {
-            const isPending = rec.approval_status === "pending" || rec.approval_status === "new";
-            const isUpdating = updatingId === rec.id;
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+          {visibleRecs.map((rec) => {
+            const isApproved = rec.approval_status === "approved";
+            const isRejected = rec.approval_status === "rejected";
+            const isPending = !isApproved && !isRejected;
+            const busy = updatingId === rec.id;
 
             return (
-              <Card key={rec.id} className="card-hover flex flex-col justify-between">
-                <div>
-                  <CardHeader className="flex flex-row items-center justify-between gap-2 pb-3 flex-wrap">
-                    <div className="flex items-center gap-1.5 flex-wrap">
+              <Card key={rec.id} className="flex flex-col">
+                <CardHeader className="pb-3 border-b border-border/60 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
                       <Badge
-                        variant={
-                          rec.urgency === "high"
-                            ? "destructive"
-                            : rec.urgency === "medium"
-                            ? "warning"
-                            : "default"
-                        }
+                        variant={isApproved ? "success" : isRejected ? "destructive" : "secondary"}
                       >
-                        {rec.urgency} urgency
+                        {isApproved ? "Approved" : isRejected ? "Rejected" : "Pending"}
                       </Badge>
-                      <Badge
-                        variant={
-                          rec.confidence === "high"
-                            ? "success"
-                            : rec.confidence === "medium"
-                            ? "warning"
-                            : "destructive"
-                        }
-                      >
-                        {rec.confidence} confidence
-                      </Badge>
-                    </div>
-                    <Badge
-                      variant={
-                        rec.approval_status === "approved"
-                          ? "success"
-                          : rec.approval_status === "rejected"
-                          ? "destructive"
-                          : "info"
-                      }
-                    >
-                      {rec.approval_status}
-                    </Badge>
-                  </CardHeader>
-
-                  <CardContent className="pt-0 space-y-4">
-                    <div>
-                      <h3 className="font-semibold text-foreground mb-1.5">{rec.title}</h3>
-                      <p className="text-sm text-muted-foreground">{rec.problem_or_opportunity}</p>
+                      <span className="text-xs text-muted-foreground capitalize">
+                        {rec.urgency} priority · {rec.risk} risk
+                      </span>
                     </div>
 
-                    <div className="grid grid-cols-1 gap-2.5">
-                      <div className="bg-muted/50 p-3 rounded-lg">
-                        <div className="text-xs text-muted-foreground uppercase tracking-wider">
-                          Suggested action
-                        </div>
-                        <div className="text-sm font-medium text-foreground mt-1">
-                          {rec.suggested_action}
-                        </div>
+                    <span className="text-sm font-semibold text-foreground tabular-nums">
+                      {rec.cost_or_budget != null && rec.cost_or_budget > 0
+                        ? formatINR(rec.cost_or_budget)
+                        : "₹0 cost"}
+                    </span>
+                  </div>
+
+                  <h3 className="text-base font-semibold text-foreground leading-snug">
+                    {rec.title}
+                  </h3>
+                </CardHeader>
+
+                <CardContent className="space-y-3.5 pt-4 flex-1 text-sm">
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground">Why it matters</p>
+                    <p className="text-foreground mt-0.5 leading-relaxed">
+                      {rec.problem_or_opportunity}
+                    </p>
+                  </div>
+
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground">Suggested action</p>
+                    <p className="text-foreground font-medium mt-0.5 leading-relaxed">
+                      {rec.suggested_action}
+                    </p>
+                  </div>
+
+                  {rec.expected_impact && (
+                    <div className="rounded-lg bg-emerald-50/70 border border-emerald-200/70 px-3.5 py-2.5">
+                      <p className="text-xs font-medium text-emerald-800">Expected impact</p>
+                      <p className="text-sm font-medium text-emerald-950 mt-0.5">
+                        {rec.expected_impact}
+                      </p>
+                    </div>
+                  )}
+
+                  {rec.assumptions && (
+                    <p className="text-xs text-muted-foreground">
+                      Note: {rec.assumptions}
+                    </p>
+                  )}
+
+                  {rec.outcome_status && rec.outcome_status !== "pending" && (
+                    <div className="rounded-lg bg-muted/40 border border-border px-3.5 py-2.5 text-xs space-y-1">
+                      <div className="flex items-center gap-2 font-medium text-foreground">
+                        <span>Recorded outcome:</span>
+                        <Badge
+                          variant={
+                            rec.outcome_status === "positive"
+                              ? "success"
+                              : rec.outcome_status === "negative"
+                              ? "destructive"
+                              : "secondary"
+                          }
+                        >
+                          {rec.outcome_status}
+                        </Badge>
                       </div>
-                      {rec.expected_impact && (
-                        <div className="bg-muted/50 p-3 rounded-lg">
-                          <div className="text-xs text-muted-foreground uppercase tracking-wider">
-                            Expected impact
-                          </div>
-                          <div className="text-sm font-medium text-foreground mt-1">
-                            {rec.expected_impact}
-                          </div>
-                        </div>
-                      )}
-                      <div className="grid grid-cols-2 gap-2.5">
-                        <div className="bg-muted/50 p-3 rounded-lg">
-                          <div className="text-xs text-muted-foreground uppercase tracking-wider">
-                            Est. cost
-                          </div>
-                          <div className="text-sm font-medium text-foreground mt-1">
-                            {rec.cost_or_budget != null && rec.cost_or_budget > 0
-                              ? formatINR(rec.cost_or_budget)
-                              : "₹0 (process fix)"}
-                          </div>
-                        </div>
-                        <div className="bg-muted/50 p-3 rounded-lg">
-                          <div className="text-xs text-muted-foreground uppercase tracking-wider">
-                            Risk
-                          </div>
-                          <div className="text-sm font-medium text-foreground mt-1 capitalize">
-                            {rec.risk}
-                          </div>
-                        </div>
-                      </div>
-                      {rec.assumptions && (
-                        <p className="text-xs text-muted-foreground italic">
-                          Assumption: {rec.assumptions}
+                      {(rec.actual_units_ordered != null ||
+                        rec.actual_revenue_delta_pct != null ||
+                        rec.actual_margin_pct != null) && (
+                        <p className="text-muted-foreground tabular-nums">
+                          {rec.actual_units_ordered != null
+                            ? `${formatNumber(rec.actual_units_ordered)} units`
+                            : ""}
+                          {rec.actual_revenue_delta_pct != null
+                            ? ` · ${rec.actual_revenue_delta_pct > 0 ? "+" : ""}${
+                                rec.actual_revenue_delta_pct
+                              }% revenue`
+                            : ""}
+                          {rec.actual_margin_pct != null
+                            ? ` · ${rec.actual_margin_pct}% margin`
+                            : ""}
                         </p>
                       )}
-                      {rec.outcome_status && rec.outcome_status !== "pending" && (
-                        <div className="bg-primary/5 border border-primary/20 p-2.5 rounded-lg text-xs space-y-1">
-                          <div className="font-semibold text-foreground flex items-center gap-2">
-                            <span>Measured Outcome:</span>
-                            <Badge variant={rec.outcome_status === "positive" ? "success" : rec.outcome_status === "negative" ? "destructive" : "secondary"}>
-                              {rec.outcome_status}
-                            </Badge>
-                          </div>
-                          {(rec.actual_units_ordered != null || rec.actual_revenue_delta_pct != null || rec.actual_margin_pct != null) && (
-                            <div className="text-muted-foreground">
-                              {rec.actual_units_ordered != null ? `${rec.actual_units_ordered} units · ` : ""}
-                              {rec.actual_revenue_delta_pct != null ? `${rec.actual_revenue_delta_pct > 0 ? "+" : ""}${rec.actual_revenue_delta_pct}% revenue · ` : ""}
-                              {rec.actual_margin_pct != null ? `${rec.actual_margin_pct}% margin` : ""}
-                            </div>
-                          )}
-                          {rec.outcome_notes && <div className="text-muted-foreground">{rec.outcome_notes}</div>}
-                        </div>
-                      )}
-                      {outcomeFormId === rec.id && (
-                        <div className="bg-muted/60 p-3 rounded-lg space-y-2 text-xs border border-border">
-                          <div className="font-medium text-foreground">Record Realized Outcome</div>
-                          <select
-                            value={outcomeStatusInput}
-                            onChange={(e) => setOutcomeStatusInput(e.target.value as "positive" | "neutral" | "negative")}
-                            className="w-full h-8 rounded border border-input bg-background px-2"
-                          >
-                            <option value="positive">Positive (Lifted sales / met margin)</option>
-                            <option value="neutral">Neutral</option>
-                            <option value="negative">Negative</option>
-                          </select>
-                          <div className="grid grid-cols-3 gap-1.5">
-                            <input
-                              type="number"
-                              placeholder="Units"
-                              value={outcomeUnitsInput}
-                              onChange={(e) => setOutcomeUnitsInput(e.target.value)}
-                              className="h-8 rounded border border-input bg-background px-2"
-                            />
-                            <input
-                              type="number"
-                              step="0.1"
-                              placeholder="Rev %"
-                              value={outcomeRevDeltaInput}
-                              onChange={(e) => setOutcomeRevDeltaInput(e.target.value)}
-                              className="h-8 rounded border border-input bg-background px-2"
-                            />
-                            <input
-                              type="number"
-                              step="0.1"
-                              placeholder="Margin %"
-                              value={outcomeMarginInput}
-                              onChange={(e) => setOutcomeMarginInput(e.target.value)}
-                              className="h-8 rounded border border-input bg-background px-2"
-                            />
-                          </div>
-                          <input
-                            type="text"
-                            placeholder="Brief outcome notes..."
-                            value={outcomeNotesInput}
-                            onChange={(e) => setOutcomeNotesInput(e.target.value)}
-                            className="w-full h-8 rounded border border-input bg-background px-2"
-                          />
-                          <div className="flex gap-1.5">
-                            <Button size="sm" className="flex-1 h-7 text-xs" disabled={isUpdating} onClick={() => handleSaveOutcome(rec.id)}>
-                              Save
-                            </Button>
-                            <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setOutcomeFormId(null)}>
-                              Cancel
-                            </Button>
-                          </div>
-                        </div>
+                      {rec.outcome_notes && (
+                        <p className="text-muted-foreground">{rec.outcome_notes}</p>
                       )}
                     </div>
-                  </CardContent>
-                </div>
+                  )}
 
-                <CardFooter className="pt-2 flex items-center gap-2">
+                  {outcomeFormId === rec.id && (
+                    <div className="rounded-lg bg-muted/40 border border-border p-3.5 space-y-2.5 text-xs">
+                      <p className="font-semibold text-foreground">Record Actual Outcome</p>
+                      <select
+                        value={outcomeStatusInput}
+                        onChange={(e) =>
+                          setOutcomeStatusInput(e.target.value as "positive" | "neutral" | "negative")
+                        }
+                        className="input h-8 text-xs"
+                      >
+                        <option value="positive">Positive (Helped sales or margin)</option>
+                        <option value="neutral">Neutral</option>
+                        <option value="negative">Negative</option>
+                      </select>
+                      <div className="grid grid-cols-3 gap-2">
+                        <input
+                          type="number"
+                          placeholder="Units ordered"
+                          value={outcomeUnitsInput}
+                          onChange={(e) => setOutcomeUnitsInput(e.target.value)}
+                          className="input h-8 text-xs"
+                        />
+                        <input
+                          type="number"
+                          placeholder="Sales change %"
+                          value={outcomeRevDeltaInput}
+                          onChange={(e) => setOutcomeRevDeltaInput(e.target.value)}
+                          className="input h-8 text-xs"
+                        />
+                        <input
+                          type="number"
+                          placeholder="Margin %"
+                          value={outcomeMarginInput}
+                          onChange={(e) => setOutcomeMarginInput(e.target.value)}
+                          className="input h-8 text-xs"
+                        />
+                      </div>
+                      <input
+                        type="text"
+                        placeholder="Optional notes"
+                        value={outcomeNotesInput}
+                        onChange={(e) => setOutcomeNotesInput(e.target.value)}
+                        className="input h-8 text-xs"
+                      />
+                      <div className="flex gap-2">
+                        <Button
+                          size="sm"
+                          disabled={busy}
+                          onClick={() => handleSaveOutcome(rec.id)}
+                          className="h-8 text-xs"
+                        >
+                          Save Result
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => setOutcomeFormId(null)}
+                          className="h-8 text-xs"
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+
+                <CardFooter className="border-t border-border/60 pt-3.5 flex items-center justify-between gap-2">
                   {isPending ? (
-                    <>
+                    <div className="flex items-center gap-2 w-full">
                       <Button
                         size="sm"
-                        className="flex-1"
-                        disabled={isUpdating}
+                        disabled={busy}
                         onClick={() => handleDecision(rec.id, "approve")}
+                        className="flex-1 h-9"
                       >
-                        <Check className="w-4 h-4 mr-1" /> Approve
+                        <Check className="w-4 h-4 mr-1.5" />
+                        {busy ? "Saving..." : "Approve Plan"}
                       </Button>
                       <Button
                         size="sm"
                         variant="outline"
-                        className="flex-1"
-                        disabled={isUpdating}
+                        disabled={busy}
                         onClick={() => handleDecision(rec.id, "reject")}
+                        className="h-9 px-3.5 text-muted-foreground hover:text-red-600"
                       >
-                        <X className="w-4 h-4 mr-1" /> Reject
+                        <X className="w-4 h-4 mr-1" />
+                        Reject
                       </Button>
-                    </>
-                  ) : (
-                    <div className="w-full flex items-center justify-between text-xs font-medium text-muted-foreground py-1">
-                      <span>Decision: <span className="uppercase">{rec.approval_status}</span></span>
-                      {rec.approval_status === "approved" && (!rec.outcome_status || rec.outcome_status === "pending") && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-7 text-xs"
-                          onClick={() => setOutcomeFormId(rec.id)}
-                        >
-                          Record Outcome
-                        </Button>
-                      )}
                     </div>
+                  ) : isApproved && outcomeFormId !== rec.id ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setOutcomeFormId(rec.id)}
+                      className="h-8 text-xs"
+                    >
+                      {rec.outcome_status && rec.outcome_status !== "pending"
+                        ? "Update Outcome"
+                        : "Record Outcome"}
+                    </Button>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">
+                      {isRejected ? "Marked as rejected" : ""}
+                    </span>
                   )}
                 </CardFooter>
               </Card>

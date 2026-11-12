@@ -21,6 +21,8 @@ import type {
   RevenueDecomposition,
   WhatIfResult,
   OutcomeTrackRecord,
+  InventoryHealth,
+  FestivalCalendarResponse,
 } from '@/types'
 
 const BASE = '/api'
@@ -158,6 +160,14 @@ export const api = {
   /** GET /api/analytics/decomposition */
   getDecomposition: (periodDays = 30) =>
     request<RevenueDecomposition>(`${BASE}/analytics/decomposition?period_days=${periodDays}`),
+
+  /** GET /api/inventory/health */
+  getInventoryHealth: () =>
+    request<InventoryHealth>(`${BASE}/inventory/health`),
+
+  /** GET /api/calendar/festival */
+  getFestivalCalendar: () =>
+    request<FestivalCalendarResponse>(`${BASE}/calendar/festival`),
 
   /** POST /api/analytics/what-if */
   runWhatIf: (payload: {

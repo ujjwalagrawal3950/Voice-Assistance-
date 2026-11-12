@@ -56,7 +56,7 @@ export function VoiceFloatingBar() {
 
   return (
     <div
-      className="fixed bottom-4 right-4 z-50 w-[330px] sm:w-[380px] rounded-2xl border border-primary/30 bg-card/95 backdrop-blur-md shadow-2xl p-3.5 space-y-2.5 fade-in"
+      className="fixed bottom-4 right-4 z-50 w-[320px] sm:w-[360px] rounded-xl border border-border bg-white shadow-lg p-3.5 space-y-2.5 fade-in"
       role="region"
       aria-label="Active voice session controller"
     >
